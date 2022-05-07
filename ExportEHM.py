@@ -18,11 +18,11 @@ from bpy.types import Operator, Mesh
 
 def WriteMeshes(bytes, meshes):
     #Mesh Count
-    bytes.append(len(meshes))
+    bytes.extend(struct.pack("<I", len(meshes)))
     
     for mesh in meshes:
         #Mesh Name Count
-        bytes.append(len(mesh.name))
+        bytes.extend(struct.pack("<I", len(mesh.name)))
         
         #Mesh Name
         bytes.extend(str.encode(mesh.name))
@@ -31,30 +31,29 @@ def WriteMeshes(bytes, meshes):
         bytes.append(True)
         
         #Vertex Count
-        bytes.append(len(mesh.data.vertices))
+        bytes.extend(struct.pack("<I", len(mesh.data.vertices)))
         
         #Vertices
         for vert in mesh.data.vertices:
             #Position
-            bytes.extend(struct.pack("f", vert.co.x))
-            bytes.extend(struct.pack("f", vert.co.y))
-            bytes.extend(struct.pack("f", vert.co.z))
+            bytes.extend(struct.pack("<f", vert.co.x))
+            bytes.extend(struct.pack("<f", vert.co.y))
+            bytes.extend(struct.pack("<f", vert.co.z))
             
             #Normal
-            bytes.extend(struct.pack("f", vert.normal.x))
-            bytes.extend(struct.pack("f", vert.normal.y))
-            bytes.extend(struct.pack("f", vert.normal.z))
+            bytes.extend(struct.pack("<f", vert.normal.x))
+            bytes.extend(struct.pack("<f", vert.normal.y))
+            bytes.extend(struct.pack("<f", vert.normal.z))
             
             #UV
-            bytes.extend(struct.pack("f", 0.0))
-            bytes.extend(struct.pack("f", 0.0))
-            bytes.extend(struct.pack("f", 0.0))
+            bytes.extend(struct.pack("<f", 0.0))
+            bytes.extend(struct.pack("<f", 0.0))
             
             #Color
-            bytes.extend(struct.pack("f", 0.0))
-            bytes.extend(struct.pack("f", 0.0))
-            bytes.extend(struct.pack("f", 0.0))
-            bytes.extend(struct.pack("f", 0.0))
+            bytes.extend(struct.pack("<f", 1.0))
+            bytes.extend(struct.pack("<f", 1.0))
+            bytes.extend(struct.pack("<f", 1.0))
+            bytes.extend(struct.pack("<f", 1.0))
             
         indices = []
             
@@ -64,11 +63,11 @@ def WriteMeshes(bytes, meshes):
             indices.append(face.vertices[2])
             
         #Index Count
-        bytes.append(len(indices))
+        bytes.extend(struct.pack("<I", len(indices)))
         
         #Indices
         for i in indices:
-            bytes.append(i)
+            bytes.extend(struct.pack("<Q", i))
     
 
 def Write(context, filepath, selectionOnly):
@@ -77,9 +76,9 @@ def Write(context, filepath, selectionOnly):
     bytes = bytearray()
     
     #Version
-    bytes.append(1)
-    bytes.append(0)
-    bytes.append(0)
+    bytes.extend(struct.pack("<I", 1))
+    bytes.extend(struct.pack("<I", 0))
+    bytes.extend(struct.pack("<I", 0))
     
     meshes = []
     
