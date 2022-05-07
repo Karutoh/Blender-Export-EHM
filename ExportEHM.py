@@ -1,4 +1,4 @@
-"""bl_info = {
+bl_info = {
     "name": "Export Event Horizon Mesh (.ehm)",
     "author": "Arron Nelson (AKA Karutoh)",
     "version": (1, 0, 0),
@@ -6,10 +6,12 @@
     "location": "File > Export > EHM",
     "description": "The script exports Blender geometry to a Event Horizon Mesh file format.",
     "category": "Import-Export"
-}"""
+}
 
 import sys
 import struct
+
+import bmesh
 
 import bpy
 from bpy_extras.io_utils import ExportHelper
@@ -36,9 +38,9 @@ def WriteMeshes(bytes, meshes):
         #Vertices
         for vert in mesh.data.vertices:
             #Position
-            bytes.extend(struct.pack("<f", vert.co.x))
             bytes.extend(struct.pack("<f", vert.co.y))
             bytes.extend(struct.pack("<f", vert.co.z))
+            bytes.extend(struct.pack("<f", vert.co.x))
             
             #Normal
             bytes.extend(struct.pack("<f", vert.normal.x))
@@ -56,19 +58,16 @@ def WriteMeshes(bytes, meshes):
             bytes.extend(struct.pack("<f", 1.0))
             
         indices = []
-            
-        for face in mesh.data.polygons:
-            indices.append(face.vertices[0])
-            indices.append(face.vertices[1])
-            indices.append(face.vertices[2])
-            
+        for polygon in mesh.data.polygons:
+            for idx in polygon.vertices:
+                indices.append(idx)
+        
         #Index Count
         bytes.extend(struct.pack("<I", len(indices)))
         
         #Indices
         for i in indices:
-            bytes.extend(struct.pack("<Q", i))
-    
+            bytes.extend(struct.pack("<I", i))
 
 def Write(context, filepath, selectionOnly):
     f = open(filepath, "wb")
