@@ -10,19 +10,32 @@ bl_info = {
 
 import sys
 import struct
-
+import mathutils
 import bmesh
 
 import bpy
-from bpy_extras.io_utils import ExportHelper
+from bpy_extras.io_utils import ExportHelper, axis_conversion
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator, Mesh
 
 def WriteMeshes(bytes, meshes):
+    origRot = axis_conversion(from_forward='-Z', from_up='Y', to_forward='-Y', to_up='Z').to_4x4()
+    newRot = axis_conversion(from_forward='-Y', from_up='Z', to_forward='-Z', to_up='Y').to_4x4()
+    
     #Mesh Count
     bytes.extend(struct.pack("<I", len(meshes)))
     
     for mesh in meshes:
+        mesh.update_from_editmode()
+        mesh.data.calc_normals_split()
+        mesh.data.transform(newRot)
+        
+        result = bmesh.new()
+        result.from_mesh(mesh.data)
+        bmesh.ops.triangulate(result, faces = result.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
+        
+        mesh.data.transform(origRot)
+        
         #Mesh Name Count
         bytes.extend(struct.pack("<I", len(mesh.name)))
         
@@ -31,35 +44,33 @@ def WriteMeshes(bytes, meshes):
         
         vertexCount = 0
         
-        for polygon in mesh.data.polygons:
-            vertexCount += len(polygon.vertices)
+        for face in result.faces:
+            vertexCount += len(face.verts)
         
         #Vertex Count
         bytes.extend(struct.pack("<I", vertexCount))
         
-        mesh.data.calc_normals_split()
-        
-        for polygon in mesh.data.polygons:
-            for vertIdx, loopIdx in zip(polygon.vertices, polygon.loop_indices):
-                loop = mesh.data.loops[loopIdx]
-                
+        for face in result.faces:
+            for vert, loop in zip(face.verts, face.loops):
                 #Position
-                bytes.extend(struct.pack("<f", mesh.data.vertices[vertIdx].co.y))
-                bytes.extend(struct.pack("<f", mesh.data.vertices[vertIdx].co.z))
-                bytes.extend(struct.pack("<f", mesh.data.vertices[vertIdx].co.x))
+                bytes.extend(struct.pack("<f", vert.co.x))
+                bytes.extend(struct.pack("<f", vert.co.y))
+                bytes.extend(struct.pack("<f", vert.co.z))
                 
                 #Normal
-                bytes.extend(struct.pack("<f", loop.normal.y))
-                bytes.extend(struct.pack("<f", loop.normal.z))
-                bytes.extend(struct.pack("<f", loop.normal.x))
+                bytes.extend(struct.pack("<f", vert.normal.x))
+                bytes.extend(struct.pack("<f", vert.normal.y))
+                bytes.extend(struct.pack("<f", vert.normal.z))
                 
                 #UV
-                if len(mesh.data.uv_layers.active.data):
-                    bytes.extend(struct.pack("<f", mesh.data.uv_layers.active.data[loopIdx].uv.x))
-                    bytes.extend(struct.pack("<f", mesh.data.uv_layers.active.data[loopIdx].uv.y))
+                if result.loops.layers.uv.active is None:
+                    bytes.extend(struct.pack("<f", 0.0))
+                    bytes.extend(struct.pack("<f", 0.0))
                 else:
-                    bytes.extend(struct.pack("<f", 0.0))
-                    bytes.extend(struct.pack("<f", 0.0))
+                    bytes.extend(struct.pack("<f", loop[result.loops.layers.uv.active].uv.x))
+                    bytes.extend(struct.pack("<f", loop[result.loops.layers.uv.active].uv.y))
+                    
+        
 
 def Write(context, filepath, selectionOnly):
     f = open(filepath, "wb")
@@ -91,7 +102,7 @@ def Write(context, filepath, selectionOnly):
     return {'FINISHED'}
 
 class ExportEHM(Operator, ExportHelper):
-    """Export to the Event Horizon Mesh format (.ehm)"""
+    """Export to the Event Horizon Model format (.ehm)"""
     bl_idname = "export.ehm"
     bl_label = "Export EHM"
     filename_ext = ".ehm"
@@ -112,7 +123,7 @@ class ExportEHM(Operator, ExportHelper):
         return Write(context, self.filepath, self.selectionOnly)
 
 def menu_func(self, context):
-    self.layout.operator(ExportEHM.bl_idname, text="EHM")
+    self.layout.operator(ExportEHM.bl_idname, text="Event Horizon Model")
 
 def register():
     bpy.utils.register_class(ExportEHM)
