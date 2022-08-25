@@ -1,10 +1,10 @@
 bl_info = {
-    "name": "Export Event Horizon Mesh (.ehm)",
+    "name": "Export Event Horizon Model (.ehm)",
     "author": "Arron Nelson (AKA Karutoh)",
     "version": (1, 0, 0),
     "blender": (3, 1, 0),
     "location": "File > Export > EHM",
-    "description": "The script exports Blender geometry to a Event Horizon Mesh file format.",
+    "description": "The script exports Blender geometry to a Event Horizon Model file format.",
     "category": "Import-Export"
 }
 
@@ -19,8 +19,8 @@ from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator, Mesh
 
 def WriteMeshes(bytes, meshes):
-    origRot = axis_conversion(from_forward='-Z', from_up='Y', to_forward='-Y', to_up='Z').to_4x4()
-    newRot = axis_conversion(from_forward='-Y', from_up='Z', to_forward='-Z', to_up='Y').to_4x4()
+    origRot = axis_conversion(from_forward='Z', from_up='Y', to_forward='-Y', to_up='Z').to_4x4()
+    newRot = axis_conversion(from_forward='-Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
     
     #Mesh Count
     bytes.extend(struct.pack("<I", len(meshes)))
@@ -68,9 +68,7 @@ def WriteMeshes(bytes, meshes):
                     bytes.extend(struct.pack("<f", 0.0))
                 else:
                     bytes.extend(struct.pack("<f", loop[result.loops.layers.uv.active].uv.x))
-                    bytes.extend(struct.pack("<f", loop[result.loops.layers.uv.active].uv.y))
-                    
-        
+                    bytes.extend(struct.pack("<f", loop[result.loops.layers.uv.active].uv.y)) 
 
 def Write(context, filepath, selectionOnly):
     f = open(filepath, "wb")
