@@ -18,9 +18,8 @@ from bpy_extras.io_utils import ExportHelper, axis_conversion
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator, Mesh
 
-def WriteMeshesTriangulated(bytes, meshes):
-    origRot = axis_conversion(from_forward='Z', from_up='Y', to_forward='-Y', to_up='Z').to_4x4()
-    newRot = axis_conversion(from_forward='-Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
+def WriteMeshes(bytes, meshes, exportIndices):
+    newTrans = axis_conversion(from_forward='-Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
     
     #Mesh Count
     bytes.extend(struct.pack("<I", len(meshes)))
@@ -28,68 +27,18 @@ def WriteMeshesTriangulated(bytes, meshes):
     for mesh in meshes:
         mesh.update_from_editmode()
         mesh.data.calc_normals_split()
-        mesh.data.transform(newRot)
         
-        result = bmesh.new()
-        result.from_mesh(mesh.data)
-        bmesh.ops.triangulate(result, faces = result.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
+        edit = bmesh.new()
+        edit.from_mesh(mesh.data)
+        bmesh.ops.triangulate(edit, faces = edit.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
         
-        mesh.data.transform(origRot)
+        result = bpy.data.meshes.new("tmp")
         
-        #Mesh Name Count
-        bytes.extend(struct.pack("<I", len(mesh.name)))
+        edit.to_mesh(result)
+        edit.free()
         
-        #Mesh Name
-        bytes.extend(str.encode(mesh.name))
-        
-        vertexCount = 0
-        
-        for face in result.faces:
-            vertexCount += len(face.verts)
-        
-        #Vertex Count
-        bytes.extend(struct.pack("<I", vertexCount))
-        
-        for face in result.faces:
-            for vert, loop in zip(face.verts, face.loops):
-                #Position
-                bytes.extend(struct.pack("<f", vert.co.x))
-                bytes.extend(struct.pack("<f", vert.co.y))
-                bytes.extend(struct.pack("<f", vert.co.z))
-                
-                #Normal
-                bytes.extend(struct.pack("<f", vert.normal.x))
-                bytes.extend(struct.pack("<f", vert.normal.y))
-                bytes.extend(struct.pack("<f", vert.normal.z))
-                
-                #UV
-                if result.loops.layers.uv.active is None:
-                    bytes.extend(struct.pack("<f", 0.0))
-                    bytes.extend(struct.pack("<f", 0.0))
-                else:
-                    bytes.extend(struct.pack("<f", loop[result.loops.layers.uv.active].uv.x))
-                    bytes.extend(struct.pack("<f", loop[result.loops.layers.uv.active].uv.y))
-                    
-        #Index Count
-        bytes.extend(struct.pack("<I", 0))
-
-def WriteMeshes(bytes, meshes):
-    origRot = axis_conversion(from_forward='Z', from_up='Y', to_forward='-Y', to_up='Z').to_4x4()
-    newRot = axis_conversion(from_forward='-Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
-    
-    #Mesh Count
-    bytes.extend(struct.pack("<I", len(meshes)))
-    
-    for mesh in meshes:
-        mesh.update_from_editmode()
-        mesh.data.calc_normals_split()
-        mesh.data.transform(newRot)
-        
-        result = bmesh.new()
-        result.from_mesh(mesh.data)
-        bmesh.ops.triangulate(result, faces = result.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
-        
-        mesh.data.transform(origRot)
+        result.update()
+        #result.transform(newTrans)
         
         #Mesh Name Count
         bytes.extend(struct.pack("<I", len(mesh.name)))
@@ -102,19 +51,23 @@ def WriteMeshes(bytes, meshes):
         normals = []
         uvs = []
         
-        for face in mesh.data.polygons:
-            indices.append(face.vertices[0])
-            indices.append(face.vertices[1])
-            indices.append(face.vertices[2])
-            for i in range(len(face.vertices)):
-                normals.append(mesh.data.vertices[face.vertices[i]].normal)
+        if exportIndices:
+            for face in result.polygons:
+                for i in face.vertices:
+                    indices.append(i)
+                    
+            for vert in result.vertices:
+                coordinates.append(vert.co)
+                normals.append(vert.normal)
                 
-        for vert in mesh.data.vertices:
-            coordinates.append(vert.co)
-
-        for uv_layer in mesh.data.uv_layers:
-            for x in range(len(uv_layer.data)):
-                uvs.append(uv_layer.data[x].uv)
+            for uv in result.uv_layers[0].data:
+                uvs.append(uv.uv)
+        else:
+            for face in result.polygons:
+                for i in face.vertices:
+                    coordinates.append(result.vertices[i].co)
+                    normals.append(result.vertices[i].normal)
+                    uvs.append(result.uv_layers[0].data[i].uv)
                 
         #Vertex Count
         bytes.extend(struct.pack("<I", len(coordinates)))
@@ -140,7 +93,7 @@ def WriteMeshes(bytes, meshes):
         for i in indices:
             bytes.extend(struct.pack("<I", i))
 
-def Write(context, filepath, selectionOnly, triangulated):
+def Write(context, filepath, selectionOnly, exportIndices):
     f = open(filepath, "wb")
     
     bytes = bytearray()
@@ -161,10 +114,7 @@ def Write(context, filepath, selectionOnly, triangulated):
             if obj.type == "MESH":
                 meshes.append(obj)
     
-    if triangulated:
-        WriteMeshesTriangulated(bytes, meshes)
-    else:
-        WriteMeshes(bytes, meshes)
+    WriteMeshes(bytes, meshes, exportIndices)
             
     f.write(bytes)
             
@@ -190,14 +140,14 @@ class ExportEHM(Operator, ExportHelper):
         default=False,
     )
     
-    triangulated: BoolProperty(
-        name="Triangulated",
-        description="Export selected objects only",
+    exportIndices: BoolProperty(
+        name="Export Indices",
+        description="Export mesh indices",
         default=False,
     )
 
     def execute(self, context):
-        return Write(context, self.filepath, self.selectionOnly, self.triangulated)
+        return Write(context, self.filepath, self.selectionOnly, self.exportIndices)
 
 def menu_func(self, context):
     self.layout.operator(ExportEHM.bl_idname, text="Event Horizon Model")
