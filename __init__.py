@@ -22,7 +22,7 @@ def WriteMeshes(bytes, meshes, exportIndices):
     newTrans = axis_conversion(from_forward='-Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
     
     #Mesh Count
-    bytes.extend(struct.pack("<I", len(meshes)))
+    bytes.extend(struct.pack("<Q", len(meshes)))
     
     for mesh in meshes:
         mesh.update_from_editmode()
@@ -41,7 +41,7 @@ def WriteMeshes(bytes, meshes, exportIndices):
         #result.transform(newTrans)
         
         #Mesh Name Count
-        bytes.extend(struct.pack("<I", len(mesh.name)))
+        bytes.extend(struct.pack("<Q", len(mesh.name)))
         
         #Mesh Name
         bytes.extend(str.encode(mesh.name))
@@ -70,7 +70,7 @@ def WriteMeshes(bytes, meshes, exportIndices):
                     uvs.append(result.uv_layers[0].data[i].uv)
                 
         #Vertex Count
-        bytes.extend(struct.pack("<I", len(coordinates)))
+        bytes.extend(struct.pack("<Q", len(coordinates)))
                 
         for i in range(len(coordinates)):
             #Coordinate
@@ -88,7 +88,7 @@ def WriteMeshes(bytes, meshes, exportIndices):
             bytes.extend(struct.pack("<f", uvs[i].y))
             
         #Index Count
-        bytes.extend(struct.pack("<I", len(indices)))
+        bytes.extend(struct.pack("<Q", len(indices)))
         
         for i in indices:
             bytes.extend(struct.pack("<I", i))
