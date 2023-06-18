@@ -27,80 +27,30 @@ def Triangulate(mesh):
     bmesh.ops.triangulate(edit, faces = edit.faces, quad_method='BEAUTY', ngon_method='BEAUTY')
     edit.to_mesh(mesh.data)
     edit.free()
+    
+def FindBIndexByGIndex(mesh, gi, skeletons):
+    for s in skeletons:
+        for bi, b in enumerate(s.data.bones):
+            if mesh.vertex_groups.find(b.name) == gi:
+                return bi
+            
+    return 0xFF
 
-def WriteMeshes_1(bytes, meshes, exportIndices):
-    #newTrans = axis_conversion(from_forward='-Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
-    
-    #Mesh Count
-    bytes.extend(struct.pack("<Q", len(meshes)))
-    
-    for mesh in meshes:
-        Triangulate(mesh)
-        
-        #result.transform(newTrans)
-        
-        #Mesh Name Count
-        bytes.extend(struct.pack("<Q", len(mesh.name)))
-        
-        #Mesh Name
-        bytes.extend(str.encode(mesh.name))
-        
-        indices = []
-        coordinates = []
-        normals = []
-        uvs = []
-        
-        if exportIndices:
-            for face in mesh.data.polygons:
-                for i in face.vertices:
-                    indices.append(i)
-                    
-            for vert in mesh.data.vertices:
-                coordinates.append(vert.co)
-                normals.append(vert.normal)
-                
-            for uv in mesh.data.uv_layers.active.data:
-                uvs.append(uv.uv)
-        else:
-            for face in mesh.data.polygons:
-                for i in face.vertices:
-                    coordinates.append(mesh.data.vertices[i].co)
-                    normals.append(mesh.data.vertices[i].normal)
-                    uvs.append(mesh.data.uv_layers[0].data[i].uv)
-                
-        #Vertex Count
-        bytes.extend(struct.pack("<Q", len(coordinates)))
-                
-        for i in range(len(coordinates)):
-            #Coordinate
-            bytes.extend(struct.pack("<f", coordinates[i].x))
-            bytes.extend(struct.pack("<f", coordinates[i].y))
-            bytes.extend(struct.pack("<f", coordinates[i].z))
+def WriteMat4(bytes, mat):
+    for x in range(4):
+        for y in range(4):
+            bytes.extend(struct.pack("<f", mat[y][x]))
             
-            #Normal
-            bytes.extend(struct.pack("<f", normals[i].x))
-            bytes.extend(struct.pack("<f", normals[i].y))
-            bytes.extend(struct.pack("<f", normals[i].z))
-            
-            #UV
-            bytes.extend(struct.pack("<f", uvs[i].x))
-            bytes.extend(struct.pack("<f", 1.0 - uvs[i].y))
-            
-        #Index Count
-        bytes.extend(struct.pack("<Q", len(indices)))
-        
-        for i in indices:
-            bytes.extend(struct.pack("<I", i))
-            
-def WriteMeshes_2(bytes, meshes, exportIndices):
+def WriteMeshes(bytes, meshes, skeletons, exportIndices):
     #Mesh Count
     bytes.extend(struct.pack("<Q", len(meshes)))
     
     for mesh in meshes:
         vertBuff = []
-        normalBuff = []
         uvBuff   = []
         faceBuff = []
+        
+        Triangulate(mesh)
         
         #Mesh Name Count
         bytes.extend(struct.pack("<Q", len(mesh.name)))
@@ -110,28 +60,25 @@ def WriteMeshes_2(bytes, meshes, exportIndices):
         
         #CloneMesh(mesh)
         for i, loop in enumerate(mesh.data.loops):
-            thisVertex = mesh.data.vertices[loop.vertex_index].co
-            thisNormal = mesh.data.vertices[loop.vertex_index].normal
+            thisVertex = mesh.data.vertices[loop.vertex_index]
             thisUV = mesh.data.uv_layers.active.data[i].uv
             
             #check if already in the list
             found = 0
             for i in range(len(vertBuff)):
-                if(abs(vertBuff[i].x - thisVertex.x) <= max(1e-09 * max(abs(vertBuff[i].x), abs(thisVertex.x)), 0.0)):
-                    if(abs(vertBuff[i].y - thisVertex.y) <= max(1e-09 * max(abs(vertBuff[i].y), abs(thisVertex.y)), 0.0)):
-                        if(abs(vertBuff[i].z - thisVertex.z) <= max(1e-09 * max(abs(vertBuff[i].z), abs(thisVertex.z)), 0.0)):
+                if(abs(vertBuff[i].co.x - thisVertex.co.x) <= max(1e-09 * max(abs(vertBuff[i].co.x), abs(thisVertex.co.x)), 0.0)):
+                    if(abs(vertBuff[i].co.y - thisVertex.co.y) <= max(1e-09 * max(abs(vertBuff[i].co.y), abs(thisVertex.co.y)), 0.0)):
+                        if(abs(vertBuff[i].co.z - thisVertex.co.z) <= max(1e-09 * max(abs(vertBuff[i].co.z), abs(thisVertex.co.z)), 0.0)):
                             if(abs(uvBuff[i].x - thisUV.x) <= max(1e-09 * max(abs(uvBuff[i].x), abs(thisUV.x)), 0.0)):
                                 if(abs(uvBuff[i].y - thisUV.y) <= max(1e-09 * max(abs(uvBuff[i].y), abs(thisUV.y)), 0.0)):
                                     faceBuff.append(int(i))
                                     found = 1
                                     break
-                i += 1
             
             #otherwise stash a new vertex
             if found == 0:
                 faceBuff.append(len(vertBuff)) #index
-                normalBuff.append(thisNormal)      #float, float, float
-                vertBuff.append(thisVertex)    #float, float, float
+                vertBuff.append(thisVertex)    #vertex obj
                 uvBuff.append(thisUV)          #float, float
         
         #Vertex Count            
@@ -139,18 +86,31 @@ def WriteMeshes_2(bytes, meshes, exportIndices):
         
         for i in range(len(vertBuff)):
             #Coordinate
-            bytes.extend(struct.pack("<f", vertBuff[i].x))
-            bytes.extend(struct.pack("<f", vertBuff[i].y))
-            bytes.extend(struct.pack("<f", vertBuff[i].z))
+            bytes.extend(struct.pack("<f", vertBuff[i].co.x))
+            bytes.extend(struct.pack("<f", vertBuff[i].co.y))
+            bytes.extend(struct.pack("<f", vertBuff[i].co.z))
             
             #Normal
-            bytes.extend(struct.pack("<f", normalBuff[i].x))
-            bytes.extend(struct.pack("<f", normalBuff[i].y))
-            bytes.extend(struct.pack("<f", normalBuff[i].z))
+            bytes.extend(struct.pack("<f", vertBuff[i].normal.x))
+            bytes.extend(struct.pack("<f", vertBuff[i].normal.y))
+            bytes.extend(struct.pack("<f", vertBuff[i].normal.z))
             
             #UV
             bytes.extend(struct.pack("<f", uvBuff[i].x))
             bytes.extend(struct.pack("<f", 1.0 - uvBuff[i].y))
+            
+            #Vertex Bones/Weights
+            for gi in range(4):
+                if gi < len(vertBuff[i].groups):
+                    bytes.extend(struct.pack("<B", FindBIndexByGIndex(mesh, vertBuff[i].groups[gi].group, skeletons)))
+                else:
+                    bytes.extend(struct.pack("<B", 0xFF))
+            
+            for gi in range(4):
+                if gi < len(vertBuff[i].groups):
+                    bytes.extend(struct.pack("<f", vertBuff[i].groups[gi].weight))
+                else:
+                    bytes.extend(struct.pack("<f", 0.0))
             
             
         #Index Count
@@ -158,12 +118,28 @@ def WriteMeshes_2(bytes, meshes, exportIndices):
         
         for i in faceBuff:
             bytes.extend(struct.pack("<I", i))
-            
+        
+        if len(skeletons) >= 1:
+            #Bone Count
+            bytes.extend(struct.pack("<B", len(skeletons[0].data.bones)))
+            for b in skeletons[0].data.bones:
+                bytes.extend(struct.pack("<Q", len(b.name)))
+                bytes.extend(str.encode(b.name))
+                
+                if b.parent is None:
+                    bytes.extend(struct.pack("<B", 0xFF))
+                else:
+                    bytes.extend(struct.pack("<B", skeletons[0].data.bones.find(b.parent.name)))
+                    
+                WriteMat4(bytes, b.matrix_local)
+        else:
+            bytes.extend(struct.pack("<B", 0))
 
 def Write(context, filepath, selectionOnly, exportIndices):
     f = open(filepath, "wb")
     
     bytes = bytearray()
+    
     
     #Version
     bytes.extend(struct.pack("<I", 1))
@@ -171,17 +147,22 @@ def Write(context, filepath, selectionOnly, exportIndices):
     bytes.extend(struct.pack("<I", 0))
     
     meshes = []
+    skeletons = []
     
     if selectionOnly:
         for obj in context.selected_objects:
             if obj.type == "MESH":
                 meshes.append(obj)
+            elif obj.type == "ARMATURE":
+                skeletons.append(obj)
     else:
         for obj in context.scene.objects:
             if obj.type == "MESH":
                 meshes.append(obj)
+            elif obj.type == "ARMATURE":
+                skeletons.append(obj)
     
-    WriteMeshes_2(bytes, meshes, exportIndices)
+    WriteMeshes(bytes, meshes, skeletons, exportIndices)
             
     f.write(bytes)
             
