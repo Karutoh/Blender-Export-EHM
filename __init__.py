@@ -18,6 +18,51 @@ from bpy_extras.io_utils import ExportHelper, axis_conversion
 from bpy.props import StringProperty, BoolProperty, EnumProperty
 from bpy.types import Operator, Mesh
 
+"""
+PropertyChange.type == 0 //X-Axis Position
+PropertyChange.type == 1 //Y-Axis Position
+PropertyChange.type == 2 //Z-Axis Position
+PropertyChange.type == 3 //X-Axis Scale
+PropertyChange.type == 4 //Y-Axis Scale
+PropertyChange.type == 5 //Z-Axis Scale
+PropertyChange.type == 6 //X-Axis Rotation (Quat)
+PropertyChange.type == 7 //Y-Axis Rotation (Quat)
+PropertyChange.type == 8 //Z-Axis Rotation (Quat)
+PropertyChange.type == 9 //W-Axis Rotation (Quat)
+"""
+class PropertyChange:
+    type = 0
+    value = 0.0
+    
+    def __init__(self, type, value):
+        self.type = type
+        self.value = value
+
+class KeyFrame:
+    num = 0
+    changes = []
+    
+    def __init__(self, num):
+        self.num = num
+        self.changes = []
+
+class BoneAnimation:
+    id = 0xFF
+    keyFrames = []
+    
+    def __init__(self, id):
+        self.id = id
+        self.keyFrames = []
+        
+    def GetKeyFrame(self, num):
+        for frame in self.keyFrames:
+            if frame.num == num:
+                return frame
+            
+        self.keyFrames.append(KeyFrame(num))
+            
+        return self.keyFrames[len(self.keyFrames) - 1]
+
 def Triangulate(mesh):
     #mesh.update_from_editmode()
     #mesh.data.calc_normals_split()
@@ -36,12 +81,144 @@ def FindBIndexByGIndex(mesh, gi, skeletons):
             
     return 0xFF
 
+def ExportSkeletons(bytes, skeletons):
+    if len(skeletons) >= 1:
+        #Bone Count
+        bytes.extend(struct.pack("<B", len(skeletons[0].data.bones)))
+        for b in skeletons[0].data.bones:
+            bytes.extend(struct.pack("<Q", len(b.name)))
+            bytes.extend(str.encode(b.name))
+            
+            if b.parent is None:
+                bytes.extend(struct.pack("<B", 0xFF))
+            else:
+                bytes.extend(struct.pack("<B", skeletons[0].data.bones.find(b.parent.name)))
+                
+            WriteMat4(bytes, b.matrix_local)
+    else:
+        #Bone Count
+        bytes.extend(struct.pack("<B", 0))
+        
+def ExportAnimations(bytes, skeletons, animations):
+    if len(skeletons) >= 1:
+        #Animation Count
+        bytes.extend(struct.pack("<Q", len(animations)))
+        
+        for a in animations:
+            bpy.context.view_layer.objects.active = skeletons[0]
+            bpy.context.object.animation_data_create()
+            bpy.context.object.animation_data.action = a
+            
+            #Animation Name
+            bytes.extend(struct.pack("<Q", len(a.name)))
+            bytes.extend(str.encode(a.name))
+            
+            boneAnims = []
+            
+            for i, b in enumerate(skeletons[0].data.bones):
+                print(f"Bone Index: {i}")
+                print(f"FCurve Count: {len(a.fcurves)}")
+                
+                for f in a.fcurves:
+                    if f.data_path == f'pose.bones["{b.name}"].location':
+                        result = None
+                        
+                        for ba in boneAnims:
+                            if ba.id == i:
+                                result = ba
+                        
+                        if result == None:
+                            boneAnims.append(BoneAnimation(i))
+                            result = boneAnims[len(boneAnims) - 1]
+                            
+                            
+                        print(f"Loc Key Frame Count: {len(f.keyframe_points)}")
+                        for k in f.keyframe_points:
+                            keyFrame = result.GetKeyFrame(k.co.x)
+                            keyFrame.changes.append(PropertyChange(f.array_index, k.co.y))
+                            
+                    elif f.data_path == f'pose.bones["{b.name}"].scale':
+                        result = None
+                        
+                        for ba in boneAnims:
+                            if ba.id == i:
+                                result = ba
+                        
+                        if result == None:
+                            boneAnims.append(BoneAnimation(i))
+                            result = boneAnims[len(boneAnims) - 1]
+                            
+                        print(f"Scale Key Frame Count: {len(f.keyframe_points)}")
+                        for k in f.keyframe_points:
+                            type = 0
+                            if f.array_index == 0:
+                                type = 3
+                            elif f.array_index == 1:
+                                type = 4
+                            elif f.array_index == 2:
+                                type = 5
+                            
+                            keyFrame = result.GetKeyFrame(k.co.x)
+                            keyFrame.changes.append(PropertyChange(type, k.co.y))
+                    elif f.data_path == f'pose.bones["{b.name}"].rotation_quaternion':
+                        result = None
+                        
+                        for ba in boneAnims:
+                            if ba.id == i:
+                                result = ba
+                        
+                        if result == None:
+                            boneAnims.append(BoneAnimation(i))
+                            result = boneAnims[len(boneAnims) - 1]
+                        
+                        print(f"Rot Key Frame Count: {len(f.keyframe_points)}")
+                        for k in f.keyframe_points:
+                            type = 0
+                            if f.array_index == 0:
+                                type = 6
+                            elif f.array_index == 1:
+                                type = 7
+                            elif f.array_index == 2:
+                                type = 8
+                            elif f.array_index == 3:
+                                type = 9
+                            
+                            keyFrame = result.GetKeyFrame(k.co.x)
+                            keyFrame.changes.append(PropertyChange(type, k.co.y))
+                            
+            #Change Count
+            bytes.extend(struct.pack("<B", len(boneAnims)))
+            
+            for ba in boneAnims:
+                #Bone Id
+                bytes.extend(struct.pack("<B", ba.id))
+                
+                #Key Frame Count
+                bytes.extend(struct.pack("<Q", len(ba.keyFrames)))
+                
+                for kf in ba.keyFrames:
+                    #Key Frame Number
+                    bytes.extend(struct.pack("<f", kf.num))
+                    
+                    print(f"PC Count: {len(kf.changes)}")
+                    #Property Change Count
+                    bytes.extend(struct.pack("<Q", len(kf.changes)))
+                    
+                    for pc in kf.changes:
+                        #Change Type
+                        bytes.extend(struct.pack("<B", pc.type))
+                    
+                        #Value
+                        bytes.extend(struct.pack("<f", pc.value))
+    else:
+        bytes.extend(struct.pack("<Q", 0))
+
 def WriteMat4(bytes, mat):
     for x in range(4):
         for y in range(4):
             bytes.extend(struct.pack("<f", mat[y][x]))
             
-def WriteMeshes(bytes, meshes, skeletons, exportIndices):
+def WriteMeshes(bytes, meshes, skeletons, animations):
     #Mesh Count
     bytes.extend(struct.pack("<Q", len(meshes)))
     
@@ -118,24 +295,11 @@ def WriteMeshes(bytes, meshes, skeletons, exportIndices):
         
         for i in faceBuff:
             bytes.extend(struct.pack("<I", i))
-        
-        if len(skeletons) >= 1:
-            #Bone Count
-            bytes.extend(struct.pack("<B", len(skeletons[0].data.bones)))
-            for b in skeletons[0].data.bones:
-                bytes.extend(struct.pack("<Q", len(b.name)))
-                bytes.extend(str.encode(b.name))
-                
-                if b.parent is None:
-                    bytes.extend(struct.pack("<B", 0xFF))
-                else:
-                    bytes.extend(struct.pack("<B", skeletons[0].data.bones.find(b.parent.name)))
-                    
-                WriteMat4(bytes, b.matrix_local)
-        else:
-            bytes.extend(struct.pack("<B", 0))
+            
+        ExportSkeletons(bytes, skeletons)
+        ExportAnimations(bytes, skeletons, animations)
 
-def Write(context, filepath, selectionOnly, exportIndices):
+def Write(context, filepath):
     f = open(filepath, "wb")
     
     bytes = bytearray()
@@ -148,21 +312,15 @@ def Write(context, filepath, selectionOnly, exportIndices):
     
     meshes = []
     skeletons = []
+    animations = bpy.data.actions
     
-    if selectionOnly:
-        for obj in context.selected_objects:
-            if obj.type == "MESH":
-                meshes.append(obj)
-            elif obj.type == "ARMATURE":
-                skeletons.append(obj)
-    else:
-        for obj in context.scene.objects:
-            if obj.type == "MESH":
-                meshes.append(obj)
-            elif obj.type == "ARMATURE":
-                skeletons.append(obj)
+    for obj in bpy.data.objects:
+        if obj.type == "MESH":
+            meshes.append(obj)
+        elif obj.type == "ARMATURE":
+            skeletons.append(obj)
     
-    WriteMeshes(bytes, meshes, skeletons, exportIndices)
+    WriteMeshes(bytes, meshes, skeletons, animations)
             
     f.write(bytes)
             
@@ -182,20 +340,8 @@ class ExportEHM(Operator, ExportHelper):
         maxlen=255
     )
 
-    selectionOnly: BoolProperty(
-        name="Selection Only",
-        description="Export selected objects only",
-        default=False,
-    )
-    
-    exportIndices: BoolProperty(
-        name="Export Indices",
-        description="Export mesh indices",
-        default=False,
-    )
-
     def execute(self, context):
-        return Write(context, self.filepath, self.selectionOnly, self.exportIndices)
+        return Write(context, self.filepath)
 
 def menu_func(self, context):
     self.layout.operator(ExportEHM.bl_idname, text="Event Horizon Model")
