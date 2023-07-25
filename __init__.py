@@ -40,10 +40,12 @@ class PropertyChange:
 
 class KeyFrame:
     num = 0
+    timeStamp = 0.0
     changes = []
     
-    def __init__(self, num):
+    def __init__(self, num, timeStamp):
         self.num = num
+        self.timeStamp = timeStamp
         self.changes = []
 
 class BoneAnimation:
@@ -59,8 +61,14 @@ class BoneAnimation:
             if frame.num == num:
                 return frame
             
-        self.keyFrames.append(KeyFrame(num))
-            
+        return None
+    
+    def AddKeyFrame(self, num, timeStamp):
+        if self.GetKeyFrame(num) != None:
+            return None
+        
+        self.keyFrames.append(KeyFrame(num, timeStamp))
+        
         return self.keyFrames[len(self.keyFrames) - 1]
 
 def Triangulate(mesh):
@@ -105,6 +113,8 @@ def ExportSkeletons(bytes, skeletons):
         
 def ExportAnimations(bytes, skeletons, animations):
     if len(skeletons) >= 1:
+        fps = bpy.context.scene.render.fps / bpy.context.scene.render.fps_base
+        
         #Animation Count
         bytes.extend(struct.pack("<Q", len(animations)))
         
@@ -117,12 +127,10 @@ def ExportAnimations(bytes, skeletons, animations):
             bytes.extend(struct.pack("<Q", len(a.name)))
             bytes.extend(str.encode(a.name))
             
+            duration = 0.0
             boneAnims = []
             
             for i, b in enumerate(skeletons[0].data.bones):
-                print(f"Bone Index: {i}")
-                print(f"FCurve Count: {len(a.fcurves)}")
-                
                 for f in a.fcurves:
                     if f.data_path == f'pose.bones["{b.name}"].location':
                         result = None
@@ -135,10 +143,13 @@ def ExportAnimations(bytes, skeletons, animations):
                             boneAnims.append(BoneAnimation(i))
                             result = boneAnims[len(boneAnims) - 1]
                             
-                            
-                        print(f"Loc Key Frame Count: {len(f.keyframe_points)}")
                         for k in f.keyframe_points:
                             keyFrame = result.GetKeyFrame(k.co.x)
+                            if keyFrame == None:
+                                keyFrame = result.AddKeyFrame(k.co.x, k.co.x / fps)
+                                if keyFrame.timeStamp > duration:
+                                    duration = keyFrame.timeStamp
+                            
                             keyFrame.changes.append(PropertyChange(f.array_index, k.co.y))
                             
                     elif f.data_path == f'pose.bones["{b.name}"].scale':
@@ -152,7 +163,6 @@ def ExportAnimations(bytes, skeletons, animations):
                             boneAnims.append(BoneAnimation(i))
                             result = boneAnims[len(boneAnims) - 1]
                             
-                        print(f"Scale Key Frame Count: {len(f.keyframe_points)}")
                         for k in f.keyframe_points:
                             type = 0
                             if f.array_index == 0:
@@ -163,6 +173,11 @@ def ExportAnimations(bytes, skeletons, animations):
                                 type = 5
                             
                             keyFrame = result.GetKeyFrame(k.co.x)
+                            if keyFrame == None:
+                                keyFrame = result.AddKeyFrame(k.co.x, k.co.x / fps)
+                                if keyFrame.timeStamp > duration:
+                                    duration = keyFrame.timeStamp
+                            
                             keyFrame.changes.append(PropertyChange(type, k.co.y))
                     elif f.data_path == f'pose.bones["{b.name}"].rotation_quaternion':
                         result = None
@@ -175,7 +190,6 @@ def ExportAnimations(bytes, skeletons, animations):
                             boneAnims.append(BoneAnimation(i))
                             result = boneAnims[len(boneAnims) - 1]
                         
-                        print(f"Rot Key Frame Count: {len(f.keyframe_points)}")
                         for k in f.keyframe_points:
                             type = 0
                             if f.array_index == 0:
@@ -188,7 +202,15 @@ def ExportAnimations(bytes, skeletons, animations):
                                 type = 9
                             
                             keyFrame = result.GetKeyFrame(k.co.x)
+                            if keyFrame == None:
+                                keyFrame = result.AddKeyFrame(k.co.x, k.co.x / fps)
+                                if keyFrame.timeStamp > duration:
+                                    duration = keyFrame.timeStamp
+                                
                             keyFrame.changes.append(PropertyChange(type, k.co.y))
+                            
+            #Duration
+            bytes.extend(struct.pack("<f", duration))
                             
             #Change Count
             bytes.extend(struct.pack("<B", len(boneAnims)))
@@ -204,7 +226,9 @@ def ExportAnimations(bytes, skeletons, animations):
                     #Key Frame Number
                     bytes.extend(struct.pack("<f", kf.num))
                     
-                    print(f"PC Count: {len(kf.changes)}")
+                    #Key Frame Time Stamp
+                    bytes.extend(struct.pack("<f", kf.timeStamp))
+                    
                     #Property Change Count
                     bytes.extend(struct.pack("<Q", len(kf.changes)))
                     
