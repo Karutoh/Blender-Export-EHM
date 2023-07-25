@@ -93,8 +93,12 @@ def ExportSkeletons(bytes, skeletons):
                 bytes.extend(struct.pack("<B", 0xFF))
             else:
                 bytes.extend(struct.pack("<B", skeletons[0].data.bones.find(b.parent.name)))
-                
-            WriteMat4(bytes, b.matrix_local)
+            
+            editBoneI = skeletons[0].data.edit_bones.find(b.name)
+            if editBoneI == -1:
+                WriteMat4(bytes, mathutils.Matrix.Identity(4))
+            else:
+                WriteMat4(bytes, skeletons[0].data.edit_bones[editBoneI].matrix)
     else:
         #Bone Count
         bytes.extend(struct.pack("<B", 0))
