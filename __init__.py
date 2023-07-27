@@ -93,16 +93,16 @@ def ExportSkeletons(bytes, skeletons):
     if len(skeletons) >= 1:
         #Bone Count
         bytes.extend(struct.pack("<B", len(skeletons[0].data.bones)))
-        for b in skeletons[0].data.bones:
+        for b in skeletons[0].pose.bones:
             bytes.extend(struct.pack("<Q", len(b.name)))
             bytes.extend(str.encode(b.name))
             
             if b.parent is None:
                 bytes.extend(struct.pack("<B", 0xFF))
             else:
-                bytes.extend(struct.pack("<B", skeletons[0].data.bones.find(b.parent.name)))
+                bytes.extend(struct.pack("<B", skeletons[0].pose.bones.find(b.parent.name)))
             
-            WriteMat4(bytes, b.matrix_local * skeletons[0].matrix.invert())
+            WriteMat4(bytes, b.matrix_basis)
     else:
         #Bone Count
         bytes.extend(struct.pack("<B", 0))
