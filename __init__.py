@@ -30,28 +30,16 @@ PropertyChange.type == 7 //Y-Axis Rotation (Quat)
 PropertyChange.type == 8 //Z-Axis Rotation (Quat)
 PropertyChange.type == 9 //W-Axis Rotation (Quat)
 """
-class PropertyChange:
-    type = 0
-    value = 0.0
-    
-    def __init__(self, type, value):
-        self.type = type
-        self.value = value
 
 class KeyFrame:
-    num = 0
-    timeStamp = 0.0
-    changes = []
-    
     def __init__(self, num, timeStamp):
         self.num = num
         self.timeStamp = timeStamp
-        self.changes = []
+        self.pos = mathutils.Vector((0.0, 0.0, 0.0))
+        self.rot = mathutils.Quaternion()
+        self.scale = mathutils.Vector((0.0, 0.0, 0.0))
 
 class BoneAnimation:
-    id = 0xFF
-    keyFrames = []
-    
     def __init__(self, id):
         self.id = id
         self.keyFrames = []
@@ -63,11 +51,11 @@ class BoneAnimation:
             
         return None
     
-    def AddKeyFrame(self, num, timeStamp):
-        if self.GetKeyFrame(num) != None:
+    def AddKeyFrame(self, keyFrame):
+        if self.GetKeyFrame(keyFrame.num) != None:
             return None
         
-        self.keyFrames.append(KeyFrame(num, timeStamp))
+        self.keyFrames.append(keyFrame)
         
         return self.keyFrames[len(self.keyFrames) - 1]
 
@@ -93,6 +81,7 @@ def ExportSkeletons(bytes, skeletons):
     if len(skeletons) >= 1:
         #Bone Count
         bytes.extend(struct.pack("<B", len(skeletons[0].data.bones)))
+        
         for b in skeletons[0].pose.bones:
             bytes.extend(struct.pack("<Q", len(b.name)))
             bytes.extend(str.encode(b.name))
@@ -102,7 +91,7 @@ def ExportSkeletons(bytes, skeletons):
             else:
                 bytes.extend(struct.pack("<B", skeletons[0].pose.bones.find(b.parent.name)))
             
-            WriteMat4(bytes, b.matrix_basis)
+            WriteMat4(bytes, b.matrix_basis);
     else:
         #Bone Count
         bytes.extend(struct.pack("<B", 0))
@@ -142,11 +131,16 @@ def ExportAnimations(bytes, skeletons, animations):
                         for k in f.keyframe_points:
                             keyFrame = result.GetKeyFrame(k.co.x)
                             if keyFrame == None:
-                                keyFrame = result.AddKeyFrame(k.co.x, k.co.x / fps)
+                                keyFrame = result.AddKeyFrame(KeyFrame(k.co.x, k.co.x / fps))
                                 if keyFrame.timeStamp > duration:
                                     duration = keyFrame.timeStamp
-                            
-                            keyFrame.changes.append(PropertyChange(f.array_index, k.co.y))
+                                    
+                            if f.array_index == 0:
+                                keyFrame.pos.x = k.co.y
+                            elif f.array_index == 1:
+                                keyFrame.pos.y = k.co.y
+                            elif f.array_index == 2:
+                                keyFrame.pos.z = k.co.y
                             
                     elif f.data_path == f'pose.bones["{b.name}"].scale':
                         result = None
@@ -160,21 +154,19 @@ def ExportAnimations(bytes, skeletons, animations):
                             result = boneAnims[len(boneAnims) - 1]
                             
                         for k in f.keyframe_points:
-                            type = 0
-                            if f.array_index == 0:
-                                type = 3
-                            elif f.array_index == 1:
-                                type = 4
-                            elif f.array_index == 2:
-                                type = 5
-                            
                             keyFrame = result.GetKeyFrame(k.co.x)
                             if keyFrame == None:
-                                keyFrame = result.AddKeyFrame(k.co.x, k.co.x / fps)
+                                keyFrame = result.AddKeyFrame(KeyFrame(k.co.x, k.co.x / fps))
                                 if keyFrame.timeStamp > duration:
                                     duration = keyFrame.timeStamp
+                                    
+                            if f.array_index == 0:
+                                keyFrame.scale.x = k.co.y
+                            elif f.array_index == 1:
+                                keyFrame.scale.y = k.co.y
+                            elif f.array_index == 2:
+                                keyFrame.scale.z = k.co.y
                             
-                            keyFrame.changes.append(PropertyChange(type, k.co.y))
                     elif f.data_path == f'pose.bones["{b.name}"].rotation_quaternion':
                         result = None
                         
@@ -187,23 +179,20 @@ def ExportAnimations(bytes, skeletons, animations):
                             result = boneAnims[len(boneAnims) - 1]
                         
                         for k in f.keyframe_points:
-                            type = 0
-                            if f.array_index == 0:
-                                type = 6
-                            elif f.array_index == 1:
-                                type = 7
-                            elif f.array_index == 2:
-                                type = 8
-                            elif f.array_index == 3:
-                                type = 9
-                            
                             keyFrame = result.GetKeyFrame(k.co.x)
                             if keyFrame == None:
-                                keyFrame = result.AddKeyFrame(k.co.x, k.co.x / fps)
+                                keyFrame = result.AddKeyFrame(KeyFrame(k.co.x, k.co.x / fps))
                                 if keyFrame.timeStamp > duration:
                                     duration = keyFrame.timeStamp
                                 
-                            keyFrame.changes.append(PropertyChange(type, k.co.y))
+                            if f.array_index == 0:
+                                keyFrame.rot.w = k.co.y
+                            elif f.array_index == 1:
+                                keyFrame.rot.x = k.co.y
+                            elif f.array_index == 2:
+                                keyFrame.rot.y = k.co.y
+                            elif f.array_index == 3:
+                                keyFrame.rot.z = k.co.y
                             
             #Duration
             bytes.extend(struct.pack("<f", duration))
@@ -225,15 +214,21 @@ def ExportAnimations(bytes, skeletons, animations):
                     #Key Frame Time Stamp
                     bytes.extend(struct.pack("<f", kf.timeStamp))
                     
-                    #Property Change Count
-                    bytes.extend(struct.pack("<Q", len(kf.changes)))
+                    #Position
+                    bytes.extend(struct.pack("<f", kf.pos.x))
+                    bytes.extend(struct.pack("<f", kf.pos.y))
+                    bytes.extend(struct.pack("<f", kf.pos.z))
                     
-                    for pc in kf.changes:
-                        #Change Type
-                        bytes.extend(struct.pack("<B", pc.type))
+                    #Rotation
+                    bytes.extend(struct.pack("<f", kf.rot.w))
+                    bytes.extend(struct.pack("<f", kf.rot.x))
+                    bytes.extend(struct.pack("<f", kf.rot.y))
+                    bytes.extend(struct.pack("<f", kf.rot.z))
                     
-                        #Value
-                        bytes.extend(struct.pack("<f", pc.value))
+                    #Scale
+                    bytes.extend(struct.pack("<f", kf.scale.x))
+                    bytes.extend(struct.pack("<f", kf.scale.y))
+                    bytes.extend(struct.pack("<f", kf.scale.z))
     else:
         bytes.extend(struct.pack("<Q", 0))
 
