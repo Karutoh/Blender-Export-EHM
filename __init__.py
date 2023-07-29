@@ -193,11 +193,11 @@ def ExportAnimations(bytes, skeletons, animations):
                             if f.array_index == 0:
                                 keyFrame.rot.w = k.co.y
                             elif f.array_index == 1:
-                                keyFrame.rot.x = -k.co.y
+                                keyFrame.rot.x = k.co.y
                             elif f.array_index == 2:
                                 keyFrame.rot.y = k.co.y
                             elif f.array_index == 3:
-                                keyFrame.rot.z = -k.co.y
+                                keyFrame.rot.z = k.co.y
                             
             #Duration
             bytes.extend(struct.pack("<f", duration))
