@@ -86,12 +86,17 @@ def ExportSkeletons(bytes, skeletons):
             bytes.extend(struct.pack("<Q", len(b.name)))
             bytes.extend(str.encode(b.name))
             
+            
+            flipMatrix = axis_conversion(from_forward='Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
+            
             if b.parent is None:
                 bytes.extend(struct.pack("<B", 0xFF))
+                WriteMat4(bytes, flipMatrix @ b.matrix_local);
             else:
                 bytes.extend(struct.pack("<B", skeletons[0].data.bones.find(b.parent.name)))
+                WriteMat4(bytes, flipMatrix @ (b.parent.matrix_local.inverted() @ b.matrix_local));
             
-            WriteMat4(bytes, b.matrix_local);
+            WriteMat4(bytes, (flipMatrix @ b.matrix_local).inverted());
     else:
         #Bone Count
         bytes.extend(struct.pack("<B", 0))
@@ -138,9 +143,9 @@ def ExportAnimations(bytes, skeletons, animations):
                             if f.array_index == 0:
                                 keyFrame.pos.x = k.co.y
                             elif f.array_index == 1:
-                                keyFrame.pos.y = k.co.y
-                            elif f.array_index == 2:
                                 keyFrame.pos.z = k.co.y
+                            elif f.array_index == 2:
+                                keyFrame.pos.y = k.co.y
                             
                     elif f.data_path == f'pose.bones["{b.name}"].scale':
                         result = None
@@ -163,9 +168,9 @@ def ExportAnimations(bytes, skeletons, animations):
                             if f.array_index == 0:
                                 keyFrame.scale.x = k.co.y
                             elif f.array_index == 1:
-                                keyFrame.scale.y = k.co.y
-                            elif f.array_index == 2:
                                 keyFrame.scale.z = k.co.y
+                            elif f.array_index == 2:
+                                keyFrame.scale.y = k.co.y
                             
                     elif f.data_path == f'pose.bones["{b.name}"].rotation_quaternion':
                         result = None
@@ -188,11 +193,11 @@ def ExportAnimations(bytes, skeletons, animations):
                             if f.array_index == 0:
                                 keyFrame.rot.w = k.co.y
                             elif f.array_index == 1:
-                                keyFrame.rot.x = k.co.y
+                                keyFrame.rot.x = -k.co.y
                             elif f.array_index == 2:
                                 keyFrame.rot.y = k.co.y
                             elif f.array_index == 3:
-                                keyFrame.rot.z = k.co.y
+                                keyFrame.rot.z = -k.co.y
                             
             #Duration
             bytes.extend(struct.pack("<f", duration))
@@ -238,10 +243,15 @@ def WriteMat4(bytes, mat):
             bytes.extend(struct.pack("<f", mat[y][x]))
             
 def WriteMeshes(bytes, meshes, skeletons, animations):
+    origTrans = axis_conversion(from_forward='Z', from_up='Y', to_forward='Y', to_up='Z').to_4x4()
+    newTrans = axis_conversion(from_forward='Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
+    
     #Mesh Count
     bytes.extend(struct.pack("<Q", len(meshes)))
     
     for mesh in meshes:
+        mesh.data.transform(newTrans)
+        
         vertBuff = []
         uvBuff   = []
         faceBuff = []
@@ -317,6 +327,8 @@ def WriteMeshes(bytes, meshes, skeletons, animations):
             
         ExportSkeletons(bytes, skeletons)
         ExportAnimations(bytes, skeletons, animations)
+        
+        mesh.data.transform(origTrans)
 
 def Write(context, filepath):
     f = open(filepath, "wb")
