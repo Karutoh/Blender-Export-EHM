@@ -243,7 +243,6 @@ def WriteMat4(bytes, mat):
             bytes.extend(struct.pack("<f", mat[y][x]))
             
 def WriteMeshes(bytes, meshes, skeletons, animations):
-    origTrans = axis_conversion(from_forward='Z', from_up='Y', to_forward='Y', to_up='Z').to_4x4()
     newTrans = axis_conversion(from_forward='Y', from_up='Z', to_forward='Z', to_up='Y').to_4x4()
     
     #Mesh Count
@@ -328,7 +327,7 @@ def WriteMeshes(bytes, meshes, skeletons, animations):
         ExportSkeletons(bytes, skeletons)
         ExportAnimations(bytes, skeletons, animations)
         
-        mesh.data.transform(origTrans)
+        mesh.data.transform(newTrans.inverted())
 
 def Write(context, filepath):
     f = open(filepath, "wb")
